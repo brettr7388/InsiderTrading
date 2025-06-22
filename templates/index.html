@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Investment Analyzer - CEO Purchase Tracker</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #64748b;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+            color: white;
+            padding: 2rem 0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-weight: 700;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .control-panel {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .form-control {
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .btn {
+            font-weight: 600;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            border: none;
+            transition: all 0.2s ease;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+        }
+
+        .progress-section {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+            display: none;
+        }
+
+        .progress {
+            height: 12px;
+            border-radius: 6px;
+            background-color: var(--border-color);
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, var(--primary-color), #3b82f6);
+            transition: width 0.3s ease;
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .stock-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            transition: all 0.2s ease;
+            border-left: 4px solid var(--border-color);
+        }
+
+        .stock-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .stock-card.rank-1 { border-left-color: #10b981; }
+        .stock-card.rank-2 { border-left-color: #3b82f6; }
+        .stock-card.rank-3 { border-left-color: #f59e0b; }
+
+        .stock-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .stock-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .rank-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .recommendation-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .recommendation-strong-buy { background: #dcfce7; color: #166534; }
+        .recommendation-buy { background: #dbeafe; color: #1e40af; }
+        .recommendation-moderate-buy { background: #e0f2fe; color: #0369a1; }
+        .recommendation-hold { background: #fef3c7; color: #92400e; }
+        .recommendation-avoid { background: #fecaca; color: #991b1b; }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .metric-item {
+            text-align: center;
+            padding: 1rem;
+            background: var(--bg-color);
+            border-radius: 8px;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .key-factors {
+            margin-top: 1rem;
+        }
+
+        .factor-item {
+            background: var(--bg-color);
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .alert {
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+            border: none;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .alert-danger {
+            background: #fecaca;
+            color: #991b1b;
+        }
+
+        .footer {
+            background: var(--text-primary);
+            color: white;
+            text-align: center;
+            padding: 2rem 0;
+            margin-top: 4rem;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2rem; }
+            .control-panel, .stock-card { padding: 1rem; }
+            .metrics-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="text-center">
+                <h1><i class="fas fa-chart-line me-3"></i>Stock Investment Analyzer</h1>
+                <p>AI-Powered CEO Purchase Tracker & Investment Recommendations</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container my-5">
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h3 class="mb-4"><i class="fas fa-cog me-2"></i>Analysis Parameters</h3>
+            <form id="analysisForm">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label class="form-label">Time Frame</label>
+                            <select class="form-control" id="timeFrame">
+                                <option value="day">Today</option>
+                                <option value="week" selected>Past Week</option>
+                                <option value="month">Past Month</option>
+                            </select>
+                            <small class="text-muted">OpenInsider data time frame</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label class="form-label">Minimum Purchase Value</label>
+                            <input type="number" class="form-control" id="minValue" value="100000" min="10000" step="10000">
+                            <small class="text-muted">Minimum purchase value to consider ($)</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label class="form-label">Max Stocks to Analyze</label>
+                            <input type="number" class="form-control" id="maxStocks" value="10" min="1" max="20">
+                            <small class="text-muted">Maximum number of stocks to analyze</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-center mt-4">
+                    <button type="submit" class="btn btn-primary btn-lg" id="startAnalysisBtn">
+                        <i class="fas fa-play me-2"></i>Start Analysis
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Progress Section -->
+        <div class="progress-section" id="progressSection">
+            <h4 class="mb-3"><i class="fas fa-spinner fa-spin me-2"></i>Analysis in Progress</h4>
+            <div class="progress mb-3">
+                <div class="progress-bar" role="progressbar" id="progressBar" style="width: 0%"></div>
+            </div>
+            <p class="mb-0" id="progressText">Initializing analysis...</p>
+            <small class="text-muted" id="currentStock"></small>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3><i class="fas fa-trophy me-2"></i>Investment Recommendations</h3>
+                <button class="btn btn-outline-primary" onclick="exportResults()">
+                    <i class="fas fa-download me-2"></i>Export Results
+                </button>
+            </div>
+
+            <!-- Summary Stats -->
+            <div class="row mb-4" id="summaryStats">
+                <!-- Stats will be populated by JavaScript -->
+            </div>
+
+            <!-- Stock Recommendations -->
+            <div id="stockRecommendations">
+                <!-- Stock cards will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="alert alert-info">
+            <h5><i class="fas fa-info-circle me-2"></i>How It Works</h5>
+            <ul class="mb-0">
+                <li><strong>Step 1:</strong> Scrapes OpenInsider.com for recent insider stock purchases (Today/Week/Month)</li>
+                <li><strong>Step 2:</strong> Performs technical and fundamental analysis on each stock</li>
+                <li><strong>Step 3:</strong> Uses AI to analyze company and market news sentiment</li>
+                <li><strong>Step 4:</strong> Combines all factors to generate investment recommendations</li>
+            </ul>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 Stock Investment Analyzer. For educational purposes only. Not financial advice.</p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentSessionId = null;
+        let progressInterval = null;
+
+        // Form submission
+        document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const timeFrame = document.getElementById('timeFrame').value;
+            const minValue = parseInt(document.getElementById('minValue').value);
+            const maxStocks = parseInt(document.getElementById('maxStocks').value);
+            
+            // Validate inputs
+            if (minValue < 10000) {
+                alert('Minimum value must be at least $10,000');
+                return;
+            }
+            
+            if (maxStocks < 1 || maxStocks > 20) {
+                alert('Max stocks must be between 1 and 20');
+                return;
+            }
+            
+            // Start analysis
+            startAnalysis(timeFrame, minValue, maxStocks);
+        });
+
+        async function startAnalysis(timeFrame, minValue, maxStocks) {
+            try {
+                // Show progress section
+                document.getElementById('progressSection').style.display = 'block';
+                document.getElementById('resultsSection').style.display = 'none';
+                
+                // Disable start button
+                const startBtn = document.getElementById('startAnalysisBtn');
+                startBtn.disabled = true;
+                startBtn.innerHTML = '<span class="loading-spinner me-2"></span>Starting...';
+                
+                // Start analysis
+                const response = await fetch('/api/start-analysis', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        time_frame: timeFrame,
+                        min_value: minValue,
+                        max_stocks: maxStocks
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentSessionId = result.session_id;
+                    // Start polling for progress
+                    startProgressPolling();
+                } else {
+                    throw new Error(result.error);
+                }
+                
+            } catch (error) {
+                console.error('Error starting analysis:', error);
+                showError('Failed to start analysis: ' + error.message);
+                resetUI();
+            }
+        }
+
+        function startProgressPolling() {
+            progressInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/analysis-progress/${currentSessionId}`);
+                    const progress = await response.json();
+                    
+                    updateProgress(progress);
+                    
+                    if (progress.status === 'completed') {
+                        clearInterval(progressInterval);
+                        await loadResults();
+                    } else if (progress.status === 'error') {
+                        clearInterval(progressInterval);
+                        showError('Analysis failed: ' + progress.error);
+                        resetUI();
+                    }
+                    
+                } catch (error) {
+                    console.error('Error polling progress:', error);
+                    clearInterval(progressInterval);
+                    showError('Error checking progress');
+                    resetUI();
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        function updateProgress(progress) {
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const currentStock = document.getElementById('currentStock');
+            
+            progressBar.style.width = progress.progress + '%';
+            progressText.textContent = progress.current_step;
+            
+            if (progress.current_stock) {
+                currentStock.textContent = `Currently analyzing: ${progress.current_stock}`;
+            } else {
+                currentStock.textContent = '';
+            }
+        }
+
+        async function loadResults() {
+            try {
+                const response = await fetch(`/api/analysis-results/${currentSessionId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayResults(result.results);
+                } else {
+                    throw new Error(result.error);
+                }
+                
+            } catch (error) {
+                console.error('Error loading results:', error);
+                showError('Failed to load results: ' + error.message);
+            }
+            
+            resetUI();
+        }
+
+        function displayResults(results) {
+            // Hide progress section
+            document.getElementById('progressSection').style.display = 'none';
+            
+            // Show results section
+            document.getElementById('resultsSection').style.display = 'block';
+            
+            // Display summary stats
+            displaySummaryStats(results);
+            
+            // Display stock recommendations
+            displayStockRecommendations(results.top_recommendations);
+            
+            // Scroll to results
+            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function displaySummaryStats(results) {
+            const summaryHTML = `
+                <div class="col-md-3">
+                    <div class="metric-item">
+                        <div class="metric-value">${results.total_ceo_purchases_found}</div>
+                        <div class="metric-label">CEO Purchases Found</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-item">
+                        <div class="metric-value">${results.stocks_analyzed}</div>
+                        <div class="metric-label">Stocks Analyzed</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-item">
+                        <div class="metric-value">$${(results.analysis_parameters.min_purchase_value / 1000).toFixed(0)}K</div>
+                        <div class="metric-label">Min Purchase Value</div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('summaryStats').innerHTML = summaryHTML;
+        }
+
+        function displayStockRecommendations(recommendations) {
+            const container = document.getElementById('stockRecommendations');
+            container.innerHTML = '';
+            
+            recommendations.forEach((stock, index) => {
+                const purchase = stock.insider_purchase;
+                const analysis = stock.stock_analysis;
+                const finalRec = stock.final_recommendation;
+                
+                const recommendationClass = getRecommendationClass(finalRec.final_recommendation);
+                
+                const stockHTML = `
+                    <div class="stock-card rank-${stock.rank}">
+                        <div class="stock-header">
+                            <div>
+                                <div class="stock-title">
+                                    #${stock.rank} ${purchase.ticker} - ${purchase.company_name}
+                                </div>
+                                <small class="text-muted">CEO: ${purchase.insider_name}</small>
+                            </div>
+                            <span class="recommendation-badge ${recommendationClass}">
+                                ${finalRec.final_recommendation}
+                            </span>
+                        </div>
+                        
+                        <div class="metrics-grid">
+                            <div class="metric-item">
+                                <div class="metric-value">${finalRec.combined_score}/100</div>
+                                <div class="metric-label">Combined Score</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${finalRec.confidence}</div>
+                                <div class="metric-label">Confidence</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">${purchase.value_formatted}</div>
+                                <div class="metric-label">CEO Purchase</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value">$${analysis.current_price || 'N/A'}</div>
+                                <div class="metric-label">Current Price</div>
+                            </div>
+                        </div>
+                        
+                        <div class="key-factors">
+                            <h6><i class="fas fa-key me-2"></i>Key Factors</h6>
+                            ${finalRec.key_factors.map(factor => 
+                                `<div class="factor-item">${factor}</div>`
+                            ).join('')}
+                        </div>
+                        
+                        <div class="mt-3">
+                            <button class="btn btn-outline-primary btn-sm" onclick="showStockDetails('${purchase.ticker}')">
+                                <i class="fas fa-chart-bar me-2"></i>View Details
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                container.innerHTML += stockHTML;
+            });
+        }
+
+        function getRecommendationClass(recommendation) {
+            const rec = recommendation.toLowerCase().replace(/\s+/g, '-');
+            return `recommendation-${rec}`;
+        }
+
+        function showStockDetails(ticker) {
+            alert(`Detailed analysis for ${ticker} - Feature coming soon!`);
+        }
+
+        function exportResults() {
+            alert('Export feature coming soon!');
+        }
+
+        function showError(message) {
+            const alertHTML = `
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-triangle me-2"></i>${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            
+            document.querySelector('.container').insertAdjacentHTML('afterbegin', alertHTML);
+        }
+
+        function resetUI() {
+            // Reset start button
+            const startBtn = document.getElementById('startAnalysisBtn');
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Analysis';
+            
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }
+    </script>
+</body>
+</html> 
