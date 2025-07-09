@@ -24,7 +24,8 @@ class StockInvestmentAnalyzer:
         self.stock_analyzer = StockAnalyzer()
         self.news_analyzer = NewsAnalyzer(
             openai_api_key=Config.OPENAI_API_KEY,
-            news_api_key=Config.NEWS_API_KEY
+            news_api_key=Config.NEWS_API_KEY,
+            use_ollama=True  # Use free local AI by default
         )
         
     def run_complete_analysis(self, days_back: int = 30, min_value: float = 100000, 

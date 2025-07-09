@@ -413,7 +413,7 @@
                 startBtn.innerHTML = '<span class="loading-spinner me-2"></span>Starting...';
                 
                 // Start analysis
-                const response = await fetch('/api/start-analysis', {
+                const response = await fetch('http://localhost:5005/api/start-analysis', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -445,7 +445,7 @@
         function startProgressPolling() {
             progressInterval = setInterval(async () => {
                 try {
-                    const response = await fetch(`/api/analysis-progress/${currentSessionId}`);
+                    const response = await fetch(`http://localhost:5005/api/analysis-progress/${currentSessionId}`);
                     const progress = await response.json();
                     
                     updateProgress(progress);
@@ -485,7 +485,7 @@
 
         async function loadResults() {
             try {
-                const response = await fetch(`/api/analysis-results/${currentSessionId}`);
+                const response = await fetch(`http://localhost:5005/api/analysis-results/${currentSessionId}`);
                 const result = await response.json();
                 
                 if (result.success) {

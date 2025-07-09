@@ -1,18 +1,32 @@
 import openai
+import ollama
 import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import logging
 from newsapi import NewsApiClient
 import json
+from duckduckgo_search import DDGS
+from bs4 import BeautifulSoup
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class NewsAnalyzer:
-    def __init__(self, openai_api_key: str, news_api_key: Optional[str] = None):
-        self.openai_client = openai.OpenAI(api_key=openai_api_key)
+    def __init__(self, openai_api_key: str, news_api_key: Optional[str] = None, use_ollama: bool = True):
+        self.openai_client = openai.OpenAI(api_key=openai_api_key) if openai_api_key else None
         self.news_api = NewsApiClient(api_key=news_api_key) if news_api_key else None
+        self.use_ollama = use_ollama
+        
+        # Test Ollama connection
+        if use_ollama:
+            try:
+                ollama.list()
+                logger.info("Ollama is available - using free local AI")
+            except Exception as e:
+                logger.warning(f"Ollama not available: {e}. Falling back to OpenAI.")
+                self.use_ollama = False
         
     def analyze_stock_news(self, ticker: str, company_name: str, days_back: int = 7) -> Dict:
         """
@@ -94,9 +108,9 @@ class NewsAnalyzer:
                         logger.warning(f"Error fetching news for query '{query}': {e}")
                         continue
             
-            # Fallback: Use alternative news sources or web scraping
-            if not news_articles:
-                news_articles = self._get_fallback_news(company_name, ticker, days_back)
+            # Always supplement with enhanced sources for better coverage
+            enhanced_articles = self._get_fallback_news(company_name, ticker, days_back)
+            news_articles.extend(enhanced_articles)
             
             # Remove duplicates
             unique_articles = []
@@ -168,11 +182,324 @@ class NewsAnalyzer:
             return []
     
     def _get_fallback_news(self, company_name: str, ticker: str, days_back: int) -> List[Dict]:
-        """Fallback method to get news when NewsAPI is not available"""
-        # This could implement web scraping from financial news sites
-        # For now, return empty list
-        logger.info("Using fallback news method (placeholder)")
+        """Enhanced fallback method using multiple free sources"""
+        logger.info(f"Using enhanced news sources for {ticker}")
+        news_articles = []
+        
+        # Source 1: DuckDuckGo Search (real-time)
+        news_articles.extend(self._get_duckduckgo_news(company_name, ticker))
+        
+        # Source 2: Yahoo Finance scraping
+        news_articles.extend(self._scrape_yahoo_finance_news(ticker))
+        
+        # Source 3: Google Finance scraping
+        news_articles.extend(self._scrape_google_finance_news(ticker))
+        
+        # Source 4: Financial sentiment from social sources
+        news_articles.extend(self._get_financial_sentiment_news(ticker, company_name))
+        
+        # Source 5: SEC filings and official announcements
+        news_articles.extend(self._get_sec_filings_news(ticker, company_name))
+        
+        # Remove duplicates and filter by relevance
+        unique_articles = self._deduplicate_and_filter_news(news_articles, ticker, company_name)
+        
+        return unique_articles[:10]  # Return top 10 most relevant
+    
+    def _get_duckduckgo_news(self, company_name: str, ticker: str) -> List[Dict]:
+        """Get real-time news using DuckDuckGo search"""
+        try:
+            articles = []
+            search_queries = [
+                f"{ticker} stock news",
+                f"{company_name} earnings",
+                f"{ticker} financial news",
+                f"{company_name} stock price"
+            ]
+            
+            with DDGS() as ddgs:
+                for query in search_queries[:2]:  # Limit to avoid rate limiting
+                    try:
+                        results = list(ddgs.news(keywords=query, max_results=5))
+                        for result in results:
+                            articles.append({
+                                'title': result.get('title', ''),
+                                'description': result.get('body', '')[:200],
+                                'content': result.get('body', ''),
+                                'url': result.get('url', ''),
+                                'published_at': result.get('date', datetime.now().isoformat()),
+                                'source': result.get('source', 'DuckDuckGo News')
+                            })
+                    except Exception as e:
+                        logger.warning(f"Error with DuckDuckGo search '{query}': {e}")
+                        continue
+            
+            logger.info(f"Found {len(articles)} articles from DuckDuckGo for {ticker}")
+            return articles
+            
+        except Exception as e:
+            logger.error(f"Error getting DuckDuckGo news: {e}")
+            return []
+    
+    def _scrape_yahoo_finance_news(self, ticker: str) -> List[Dict]:
+        """Scrape news from Yahoo Finance"""
+        try:
+            articles = []
+            url = f"https://finance.yahoo.com/quote/{ticker}/news"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Find news articles (Yahoo Finance structure)
+                news_items = soup.find_all('h3', limit=5)  # Limit to avoid overload
+                
+                for item in news_items:
+                    try:
+                        title_element = item.find('a')
+                        if title_element:
+                            title = title_element.get_text(strip=True)
+                            if title and len(title) > 10:  # Filter out short/irrelevant titles
+                                articles.append({
+                                    'title': title,
+                                    'description': title[:200],
+                                    'content': title,
+                                    'url': f"https://finance.yahoo.com{title_element.get('href', '')}",
+                                    'published_at': datetime.now().isoformat(),
+                                    'source': 'Yahoo Finance'
+                                })
+                    except Exception as e:
+                        continue
+            
+            logger.info(f"Found {len(articles)} articles from Yahoo Finance for {ticker}")
+            return articles
+            
+        except Exception as e:
+            logger.warning(f"Error scraping Yahoo Finance for {ticker}: {e}")
+            return []
+    
+    def _scrape_google_finance_news(self, ticker: str) -> List[Dict]:
+        """Scrape news from Google Finance"""
+        try:
+            articles = []
+            # Use DuckDuckGo to search Google Finance specifically
+            with DDGS() as ddgs:
+                results = list(ddgs.news(
+                    keywords=f"site:finance.google.com {ticker}",
+                    max_results=3
+                ))
+                
+                for result in results:
+                    articles.append({
+                        'title': result.get('title', ''),
+                        'description': result.get('body', '')[:200],
+                        'content': result.get('body', ''),
+                        'url': result.get('url', ''),
+                        'published_at': result.get('date', datetime.now().isoformat()),
+                        'source': 'Google Finance'
+                    })
+            
+            logger.info(f"Found {len(articles)} articles from Google Finance for {ticker}")
+            return articles
+            
+        except Exception as e:
+            logger.warning(f"Error getting Google Finance news for {ticker}: {e}")
+            return []
+    
+    def _get_financial_sentiment_news(self, ticker: str, company_name: str) -> List[Dict]:
+        """Get financial sentiment and discussions from social sources"""
+        try:
+            articles = []
+            
+            # Search for recent discussions and sentiment
+            search_queries = [
+                f"{ticker} stock reddit",
+                f"{ticker} earnings call",
+                f"{ticker} analyst rating",
+                f"{company_name} stock analysis"
+            ]
+            
+            with DDGS() as ddgs:
+                for query in search_queries[:2]:  # Limit searches
+                    try:
+                        results = list(ddgs.news(keywords=query, max_results=3))
+                        for result in results:
+                            # Focus on financial analysis and sentiment
+                            title = result.get('title', '').lower()
+                            body = result.get('body', '').lower()
+                            
+                            # Score for financial relevance
+                            financial_keywords = [
+                                'buy', 'sell', 'hold', 'bullish', 'bearish', 'earnings', 
+                                'revenue', 'profit', 'analysis', 'rating', 'upgrade', 'downgrade',
+                                'target price', 'valuation', 'forecast'
+                            ]
+                            
+                            relevance_score = sum(1 for keyword in financial_keywords 
+                                                if keyword in title or keyword in body)
+                            
+                            if relevance_score >= 2:  # Only include financially relevant content
+                                articles.append({
+                                    'title': result.get('title', ''),
+                                    'description': result.get('body', '')[:200],
+                                    'content': result.get('body', ''),
+                                    'url': result.get('url', ''),
+                                    'published_at': result.get('date', datetime.now().isoformat()),
+                                    'source': 'Financial Sentiment',
+                                    'relevance_score': relevance_score + 2  # Boost for financial content
+                                })
+                    
+                    except Exception as e:
+                        logger.warning(f"Error with sentiment search '{query}': {e}")
+                        continue
+            
+            logger.info(f"Found {len(articles)} financial sentiment articles for {ticker}")
+            return articles
+            
+        except Exception as e:
+            logger.warning(f"Error getting financial sentiment for {ticker}: {e}")
+            return []
+    
+    def _get_sec_filings_news(self, ticker: str, company_name: str) -> List[Dict]:
+        """Get recent SEC filings and official company announcements"""
+        try:
+            articles = []
+            
+            # Search for SEC filings and official announcements
+            search_queries = [
+                f"{ticker} SEC filing",
+                f"{ticker} 10-K 10-Q 8-K",
+                f"{company_name} press release",
+                f"{ticker} earnings report"
+            ]
+            
+            with DDGS() as ddgs:
+                for query in search_queries[:2]:  # Limit to avoid rate limiting
+                    try:
+                        results = list(ddgs.news(keywords=query, max_results=3))
+                        for result in results:
+                            title = result.get('title', '').lower()
+                            body = result.get('body', '').lower()
+                            url = result.get('url', '').lower()
+                            
+                            # Prioritize official sources
+                            official_score = 0
+                            if 'sec.gov' in url or 'investor' in url:
+                                official_score += 5
+                            if any(filing in title for filing in ['10-k', '10-q', '8-k', 'proxy', 'earnings']):
+                                official_score += 3
+                            if 'press release' in title or 'announces' in title:
+                                official_score += 2
+                            
+                            if official_score >= 2:  # Only include official/semi-official content
+                                articles.append({
+                                    'title': result.get('title', ''),
+                                    'description': result.get('body', '')[:200],
+                                    'content': result.get('body', ''),
+                                    'url': result.get('url', ''),
+                                    'published_at': result.get('date', datetime.now().isoformat()),
+                                    'source': 'SEC/Official',
+                                    'relevance_score': official_score + 3  # High boost for official content
+                                })
+                    
+                    except Exception as e:
+                        logger.warning(f"Error with SEC search '{query}': {e}")
+                        continue
+            
+            logger.info(f"Found {len(articles)} SEC/official articles for {ticker}")
+            return articles
+            
+        except Exception as e:
+            logger.warning(f"Error getting SEC filings for {ticker}: {e}")
         return []
+    
+    def _deduplicate_and_filter_news(self, articles: List[Dict], ticker: str, company_name: str) -> List[Dict]:
+        """Remove duplicates and filter for relevance"""
+        if not articles:
+            return []
+        
+        # Remove duplicates by title similarity
+        unique_articles = []
+        seen_titles = set()
+        
+        for article in articles:
+            title = article.get('title', '').lower()
+            title_words = set(re.findall(r'\w+', title))
+            
+            # Check if this title is too similar to existing ones
+            is_duplicate = False
+            for seen_title in seen_titles:
+                seen_words = set(re.findall(r'\w+', seen_title))
+                if len(title_words & seen_words) / max(len(title_words), len(seen_words)) > 0.7:
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate and title:
+                seen_titles.add(title)
+                unique_articles.append(article)
+        
+        # Filter for relevance (contains ticker or company name)
+        relevant_articles = []
+        for article in unique_articles:
+            title_content = (article.get('title', '') + ' ' + article.get('description', '')).lower()
+            if (ticker.lower() in title_content or 
+                any(word.lower() in title_content for word in company_name.split() if len(word) > 3)):
+                
+                # Calculate relevance score
+                score = 0
+                if ticker.lower() in title_content:
+                    score += 3
+                if 'earnings' in title_content:
+                    score += 2
+                if any(word in title_content for word in ['stock', 'shares', 'price', 'buy', 'sell']):
+                    score += 1
+                
+                article['relevance_score'] = score
+                relevant_articles.append(article)
+        
+        # Sort by relevance score (highest first)
+        relevant_articles.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+        
+        logger.info(f"Filtered to {len(relevant_articles)} relevant articles for {ticker}")
+        return relevant_articles
+    
+    def _get_ai_response(self, prompt: str, system_message: str) -> str:
+        """Get AI response using Ollama (free) or OpenAI (fallback)"""
+        if self.use_ollama:
+            try:
+                response = ollama.chat(
+                    model='llama3.1:8b',
+                    messages=[
+                        {'role': 'system', 'content': system_message},
+                        {'role': 'user', 'content': prompt}
+                    ]
+                )
+                return response['message']['content']
+            except Exception as e:
+                logger.warning(f"Ollama failed: {e}. Trying OpenAI...")
+                self.use_ollama = False  # Switch to OpenAI for this session
+        
+        # Use OpenAI as fallback
+        if self.openai_client:
+            try:
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",  # Using cheaper model
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=1000,
+                    temperature=0.3
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                logger.error(f"Both Ollama and OpenAI failed: {e}")
+                raise
+        else:
+            raise Exception("No AI provider available")
     
     def _analyze_news_with_ai(self, articles: List[Dict], news_type: str, ticker: str, company_name: str) -> Dict:
         """Use OpenAI to analyze news sentiment and extract insights"""
@@ -192,19 +519,8 @@ class NewsAnalyzer:
             # Create AI prompt
             prompt = self._create_analysis_prompt(news_content, news_type, ticker, company_name)
             
-            # Get AI analysis
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are a financial analyst expert in news sentiment analysis and stock market insights."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=1000,
-                temperature=0.3
-            )
-            
-            # Parse AI response
-            analysis_text = response.choices[0].message.content
+            # Get AI analysis using Ollama or OpenAI
+            analysis_text = self._get_ai_response(prompt, "You are a financial analyst expert in news sentiment analysis and stock market insights.")
             parsed_analysis = self._parse_ai_analysis(analysis_text)
             
             return parsed_analysis
@@ -358,17 +674,7 @@ class NewsAnalyzer:
             }}
             """
             
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are an expert investment advisor providing clear, actionable recommendations."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=500,
-                temperature=0.3
-            )
-            
-            recommendation_text = response.choices[0].message.content
+            recommendation_text = self._get_ai_response(prompt, "You are an expert investment advisor providing clear, actionable recommendations.")
             parsed_recommendation = self._parse_ai_analysis(recommendation_text)
             
             # Add overall sentiment score

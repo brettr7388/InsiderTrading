@@ -39,6 +39,7 @@ An AI-powered stock investment analyzer that combines insider trading data, tech
 2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
+   pip3 install -r requirements.txt
    ```
 
 3. **Set up API keys**
