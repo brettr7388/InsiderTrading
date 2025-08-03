@@ -116,7 +116,12 @@ class OpenInsiderScraper:
                     continue
             
             logger.info(f"Found {len(purchases)} qualifying insider purchases")
-            return sorted(purchases, key=lambda x: x['value'], reverse=True)
+            
+            # Combine duplicate tickers
+            combined_purchases = self._combine_duplicate_tickers(purchases)
+            logger.info(f"After combining duplicates: {len(combined_purchases)} unique tickers")
+            
+            return sorted(combined_purchases, key=lambda x: x['value'], reverse=True)
             
         except Exception as e:
             logger.error(f"Error scraping OpenInsider: {e}")
@@ -261,6 +266,68 @@ class OpenInsiderScraper:
             return f"${value/1000:.0f}K"
         else:
             return f"${value:,.0f}"
+    
+    def _combine_duplicate_tickers(self, purchases: List[Dict]) -> List[Dict]:
+        """Combine multiple purchases of the same ticker into a single record"""
+        if not purchases:
+            return purchases
+        
+        # Group purchases by ticker
+        ticker_groups = {}
+        for purchase in purchases:
+            ticker = purchase['ticker']
+            if ticker not in ticker_groups:
+                ticker_groups[ticker] = []
+            ticker_groups[ticker].append(purchase)
+        
+        combined_purchases = []
+        
+        for ticker, group in ticker_groups.items():
+            if len(group) == 1:
+                # Single purchase, keep as is
+                combined_purchases.append(group[0])
+            else:
+                # Multiple purchases, combine them
+                logger.info(f"Combining {len(group)} purchases for {ticker}")
+                
+                # Take the most recent purchase as the base
+                most_recent = max(group, key=lambda x: x['trade_date'])
+                
+                # Calculate combined values
+                total_value = sum(p['value'] for p in group)
+                total_quantity = sum(p['quantity'] for p in group)
+                
+                # Get all unique insider names
+                insider_names = list(set(p['insider_name'] for p in group))
+                combined_insider_name = insider_names[0] if len(insider_names) == 1 else f"{insider_names[0]} (+{len(insider_names)-1} others)"
+                
+                # Get date range
+                dates = [p['trade_date'] for p in group]
+                earliest_date = min(dates)
+                latest_date = max(dates)
+                date_display = latest_date if earliest_date == latest_date else f"{earliest_date} to {latest_date}"
+                
+                # Create combined record
+                combined_purchase = {
+                    'filing_date': most_recent['filing_date'],
+                    'trade_date': date_display,
+                    'ticker': ticker,
+                    'company_name': most_recent['company_name'],
+                    'insider_name': combined_insider_name,
+                    'title': most_recent['title'],
+                    'price': sum(p['price'] * p['quantity'] for p in group) / total_quantity if total_quantity > 0 else 0,  # Weighted average price
+                    'quantity': total_quantity,
+                    'value': total_value,
+                    'value_formatted': self._format_currency(total_value),
+                    'owned_after': most_recent['owned_after'],
+                    'ownership_change': most_recent['ownership_change'],
+                    'purchase_count': len(group)  # Track how many purchases were combined
+                }
+                
+                combined_purchases.append(combined_purchase)
+                logger.info(f"Combined {ticker}: {len(group)} purchases totaling {combined_purchase['value_formatted']}")
+        
+        return combined_purchases
     
     def get_ticker_details(self, ticker: str) -> Dict:
         """Get additional details for a specific ticker from OpenInsider"""
